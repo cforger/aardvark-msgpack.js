@@ -4,7 +4,7 @@ This is a fork of uupaa's msgpack.js. The work is his, I've just made a small ed
 
 I created the fork because I was having problems with exchanging msgpack data between this and the Python version u-msgpack-python, and my attempts to contact the author for a newer version didn't work out. 
 
-I found a slightly newer version (1.6) on a Japanese git server, and added code to handle a 0xd9 message. This was all I needed at the time for my application, so I haven't progressed further. 
+I found a slightly newer version (1.06) on a Japanese git server, and added code to handle a 0xd9 message. This was all I needed at the time for my application, so I haven't progressed further. 
 
 I do have plans on fully updating this version to the latest MsgPack format at a later date.
 
