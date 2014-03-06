@@ -66,7 +66,12 @@ function msgpackunpack(data) { // @param BinaryString/ByteArray:
     //  [1][String to mix]    msgpack.unpack("...") -> {}
     //  [2][ByteArray to mix] msgpack.unpack([...]) -> {}
 
-    _buf = typeof data === "string" ? toByteArray(data) : data;
+//    _buf = typeof data === "string" ? toByteArray(data) : data;
+    if ( typeof data === "string" ) {
+        _buf = toByteArray(data);
+    } else {
+        _buf = data
+    }
     _idx = -1;
     return decode();
 }
@@ -259,6 +264,7 @@ function encode(rv,      // @param ByteArray: result
 
 // inner - decoder
 function decode() { // @return Mix:
+
     var size,       // :uint
         i,          // :uint
         iz,         // :uint
@@ -271,6 +277,11 @@ function decode() { // @return Mix:
         hash,       // :Object
         buf = _buf, // :Array
         type = buf[++_idx]; // :uint
+
+//    console.log("(msgpack.decode) type = ", type);
+//    console.log("type in hex", type.toString(16));
+//    console.log('In msgpack.decode, buf is ', buf);
+
 
     if (type >= 0xe0) {             // Negative FixNum (111x xxxx) (-32 ~ -1)
         return type - 0x100;
@@ -363,6 +374,19 @@ function decode() { // @return Mix:
                 return num < 0x8000 ? num : num - 0x10000; // 0x8000 * 2
     case 0xd0:  num  =  buf[++_idx];
                 return num < 0x80 ? num : num - 0x100; // 0x80 * 2
+    // CF Additions
+    case 0xd9:  num  =  buf[++_idx];
+//                console.log("num  =  buf[++_idx]", num);
+//                console.log("array = ", ary);
+                for (ary = [], i = _idx, iz = i + num; i < iz; ) {
+                    c = buf[++i]; // lead byte
+                    ary.push(c < 0x80 ? c : // ASCII(0x00 ~ 0x7f)
+                             c < 0xe0 ? ((c & 0x1f) <<  6 | (buf[++i] & 0x3f)) :
+                                        ((c & 0x0f) << 12 | (buf[++i] & 0x3f) << 6
+                                                          | (buf[++i] & 0x3f)));
+                }
+                _idx = i;
+                return byteArrayToBinaryString(ary);
     // 0xdb: raw32, 0xda: raw16, 0xa0: raw ( string )
     case 0xdb:  num +=  buf[++_idx] * 0x1000000 + (buf[++_idx] << 16);
     case 0xda:  num += (buf[++_idx] << 8)       +  buf[++_idx];
@@ -405,11 +429,15 @@ function decode() { // @return Mix:
                 }
                 return ary;
     }
+    console.error("msgpack - Error")
     _error = 2; // UNKNOWN_TYPE
     return;
 }
 
 // inner - byteArray To BinaryString
+
+// TODO: This looks like it will run out of stack memory on a large array, lets
+// see if we can clean that up.
 function byteArrayToBinaryString(byteArray) { // @param ByteArray
                                               // @return BinaryString
     // http://d.hatena.ne.jp/uupaa/20101128
@@ -591,6 +619,7 @@ function ajax(url,        // @param String:
 // inner - BinaryString To ByteArray
 function toByteArray(data) { // @param BinaryString: "\00\01"
                              // @return ByteArray: [0x00, 0x01]
+    //console.log("(msgpack)(toByteArray) in");
     var rv = [],              // :Array
         bin2num = _bin2num,   // :Object
         remain,               // :uint
@@ -598,6 +627,7 @@ function toByteArray(data) { // @param BinaryString: "\00\01"
         i = -1,               // :int
         iz;                   // :uint
 
+    //console.log("(msgpack)(toByteArray) data (Which should be a text string):", data)
     iz = ary.length;
     remain = iz % 8;
 
@@ -605,6 +635,7 @@ function toByteArray(data) { // @param BinaryString: "\00\01"
         ++i;
         rv[i] = bin2num[ary[i]];
     }
+
     remain = iz >> 3;
     while (remain--) {
         rv.push(bin2num[ary[++i]], bin2num[ary[++i]],
@@ -612,11 +643,13 @@ function toByteArray(data) { // @param BinaryString: "\00\01"
                 bin2num[ary[++i]], bin2num[ary[++i]],
                 bin2num[ary[++i]], bin2num[ary[++i]]);
     }
+    //console.log("(msgpack)(toByteArray) rv :", rv)
     return rv;
 }
 
 // inner - BinaryString to ByteArray
 function toByteArrayIE(xhr) {
+    //console.log("(msgpack) in toByteArrayIE");
     var rv = [], data, remain,
         charCodeAt = "charCodeAt",
         loop, v0, v1, v2, v3, v4, v5, v6, v7,
@@ -624,6 +657,9 @@ function toByteArrayIE(xhr) {
 
     iz = vblen(xhr);
     data = vbstr(xhr);
+
+    //console.log("(msgpack) xhr :", xhr);
+    //console.log("(msgpack) data :", data)
     loop = Math.ceil(iz / 2);
     remain = loop % 8;
 
