@@ -1,4 +1,4 @@
-/*!{id:msgpack.js,ver:1.05,license:"MIT",author:"uupaa.js@gmail.com"}*/
+/*!{id:msgpack.js,ver:1.06,license:"MIT",author:"uupaa.js@gmail.com"}*/
 
 // === msgpack ===
 // MessagePack -> http://msgpack.sourceforge.net/
@@ -7,12 +7,13 @@ this.msgpack || (function(globalScope) {
 
 globalScope.msgpack = {
     pack:       msgpackpack,    // msgpack.pack(data:Mix,
-                                //              toString:Boolean = false):ByteArray/ByteString/false
+                                //              toString:Boolean = false):ByteArray/BinaryString
                                 //  [1][mix to String]    msgpack.pack({}, true) -> "..."
                                 //  [2][mix to ByteArray] msgpack.pack({})       -> [...]
     unpack:     msgpackunpack,  // msgpack.unpack(data:BinaryString/ByteArray):Mix
                                 //  [1][String to mix]    msgpack.unpack("...") -> {}
                                 //  [2][ByteArray to mix] msgpack.unpack([...]) -> {}
+    isError:    msgpackiserror, // msgpack.isError():Boolean
     worker:     "msgpack.js",   // msgpack.worker - WebWorkers script filename
     upload:     msgpackupload,  // msgpack.upload(url:String, option:Hash, callback:Function)
     download:   msgpackdownload // msgpack.download(url:String, option:Hash, callback:Function)
@@ -25,7 +26,9 @@ var _ie         = /MSIE/.test(navigator.userAgent),
                    "abcdefghijklmnopqrstuvwxyz0123456789+/").split(""),
     _buf        = [], // decode buffer
     _idx        = 0,  // decode buffer[index]
-    _error      = 0,  // msgpack.pack() error code. 1 = CYCLIC_REFERENCE_ERROR
+    _error      = 0,  // error code. 0 = NO ERROR
+                      //             1 = CYCLIC_REFERENCE_ERROR
+                      //             2 = UNKNOWN_TYPE
     _isArray    = Array.isArray || (function(mix) {
                     return Object.prototype.toString.call(mix) === "[object Array]";
                   }),
@@ -44,8 +47,7 @@ self.importScripts && (onmessage = function(event) {
 // msgpack.pack
 function msgpackpack(data,       // @param Mix:
                      toString) { // @param Boolean(= false):
-                                 // @return ByteArray/BinaryString/false:
-                                 //     false is error return
+                                 // @return ByteArray/BinaryString:
     //  [1][mix to String]    msgpack.pack({}, true) -> "..."
     //  [2][mix to ByteArray] msgpack.pack({})       -> [...]
 
@@ -53,29 +55,42 @@ function msgpackpack(data,       // @param Mix:
 
     var byteArray = encode([], data, 0);
 
-    return _error ? false
-                  : toString ? byteArrayToByteString(byteArray)
+    return _error ? (toString ? "" : [])
+                  : toString ? byteArrayToBinaryString(byteArray)
                              : byteArray;
 }
 
 // msgpack.unpack
 function msgpackunpack(data) { // @param BinaryString/ByteArray:
-                               // @return Mix/undefined:
-                               //       undefined is error return
+                               // @return Mix:
     //  [1][String to mix]    msgpack.unpack("...") -> {}
     //  [2][ByteArray to mix] msgpack.unpack([...]) -> {}
 
     _buf = typeof data === "string" ? toByteArray(data) : data;
     _idx = -1;
-    return decode(); // mix or undefined
+    return decode();
+}
+
+// msgpack.isError
+function msgpackiserror() { // @return Boolean
+    return _error ? true : false;
 }
 
 // inner - encoder
 function encode(rv,      // @param ByteArray: result
                 mix,     // @param Mix: source data
                 depth) { // @param Number: depth
-    var size, i, iz, c, pos,        // for UTF8.encode, Array.encode, Hash.encode
-        high, low, sign, exp, frac; // for IEEE754
+    var size,   // :uint     for String.encode, Array.encode, Hash.encode
+        i,      // :uint     for String.encode, Array.encode
+        iz,     // :uint     for String.encode, Array.encode
+        c,      // :uint     for String.encode
+        pos,    // :uint     for String.encode, Hash.encode
+        key,    // :*        for Hash.encode
+        high,   // :uint     for IEEE754, int64, uint64
+        low,    // :uint     for IEEE754, int64, uint64
+        sign,   // :Boolean  for IEEE754
+        exp,    // :uint     for IEEE754
+        frac;   // :uint     for IEEE754
 
     if (mix == null) { // null or undefined -> 0xc0 ( null )
         rv.push(0xc0);
@@ -222,10 +237,10 @@ function encode(rv,      // @param ByteArray: result
                 pos = rv.length; // keep rewrite position
                 rv.push(0); // placeholder
                 size = 0;
-                for (i in mix) {
+                for (key in mix) {
                     ++size;
-                    encode(rv, i,      depth);
-                    encode(rv, mix[i], depth);
+                    encode(rv, key,      depth);
+                    encode(rv, mix[key], depth);
                 }
                 if (size < 16) {
                     rv[pos] = 0x80 + size; // rewrite
@@ -244,9 +259,18 @@ function encode(rv,      // @param ByteArray: result
 
 // inner - decoder
 function decode() { // @return Mix:
-    var size, i, iz, c, num = 0,
-        sign, exp, frac, ary, hash,
-        buf = _buf, type = buf[++_idx];
+    var size,       // :uint
+        i,          // :uint
+        iz,         // :uint
+        c,          // :uint
+        num = 0,    // :uint
+        sign,       // :Boolean
+        exp,        // :uint
+        frac,       // :uint
+        ary,        // :Array
+        hash,       // :Object
+        buf = _buf, // :Array
+        type = buf[++_idx]; // :uint
 
     if (type >= 0xe0) {             // Negative FixNum (111x xxxx) (-32 ~ -1)
         return type - 0x100;
@@ -261,7 +285,7 @@ function decode() { // @return Mix:
         } else if (type < 0xa0) {   // FixArray (1001 xxxx)
             num  = type - 0x90;
             type = 0x90;
-        } else { // if (type < 0xc0) {   // FixRaw (101x xxxx)
+        } else { // if (type < 0xc0) // FixRaw (101x xxxx)
             num  = type - 0xa0;
             type = 0xa0;
         }
@@ -273,7 +297,7 @@ function decode() { // @return Mix:
     case 0xca:  // float
                 num = buf[++_idx] * 0x1000000 + (buf[++_idx] << 16) +
                                                 (buf[++_idx] <<  8) + buf[++_idx];
-                sign =  num & 0x80000000;    //  1bit
+                sign =  num > 0x7fffffff;    //  1bit
                 exp  = (num >> 23) & 0xff;   //  8bits
                 frac =  num & 0x7fffff;      // 23bits
                 if (!num || num === 0x80000000) { // 0.0 or -0.0
@@ -287,7 +311,7 @@ function decode() { // @return Mix:
     case 0xcb:  // double
                 num = buf[++_idx] * 0x1000000 + (buf[++_idx] << 16) +
                                                 (buf[++_idx] <<  8) + buf[++_idx];
-                sign =  num & 0x80000000;    //  1bit
+                sign =  num > 0x7fffffff;    //  1bit
                 exp  = (num >> 20) & 0x7ff;  // 11bits
                 frac =  num & 0xfffff;       // 52bits - 32bits (high word)
                 if (!num || num === 0x80000000) { // 0.0 or -0.0
@@ -352,7 +376,7 @@ function decode() { // @return Mix:
                 }
                 _idx = i;
                 return ary.length < 10240 ? _toString.apply(null, ary)
-                                          : byteArrayToByteString(ary);
+                                          : byteArrayToBinaryString(ary);
     // 0xdf: map32, 0xde: map16, 0x80: map
     case 0xdf:  num +=  buf[++_idx] * 0x1000000 + (buf[++_idx] << 16);
     case 0xde:  num += (buf[++_idx] << 8)       +  buf[++_idx];
@@ -381,19 +405,23 @@ function decode() { // @return Mix:
                 }
                 return ary;
     }
+    _error = 2; // UNKNOWN_TYPE
     return;
 }
 
-// inner - byteArray To ByteString
-function byteArrayToByteString(byteArray) { // @param ByteArray
-                                            // @return String
+// inner - byteArray To BinaryString
+function byteArrayToBinaryString(byteArray) { // @param ByteArray
+                                              // @return BinaryString
     // http://d.hatena.ne.jp/uupaa/20101128
     try {
         return _toString.apply(this, byteArray); // toString
     } catch(err) {
         ; // avoid "Maximum call stack size exceeded"
     }
-    var rv = [], i = 0, iz = byteArray.length, num2bin = _num2bin;
+    var rv = [],               // :Array
+        i = 0,                 // :uint
+        iz = byteArray.length, // :uint
+        num2bin = _num2bin;    // :Object
 
     for (; i < iz; ++i) {
         rv[i] = num2bin[byteArray[i]];
@@ -563,9 +591,12 @@ function ajax(url,        // @param String:
 // inner - BinaryString To ByteArray
 function toByteArray(data) { // @param BinaryString: "\00\01"
                              // @return ByteArray: [0x00, 0x01]
-    var rv = [], bin2num = _bin2num, remain,
-        ary = data.split(""),
-        i = -1, iz;
+    var rv = [],              // :Array
+        bin2num = _bin2num,   // :Object
+        remain,               // :uint
+        ary = data.split(""), // :Array
+        i = -1,               // :int
+        iz;                   // :uint
 
     iz = ary.length;
     remain = iz % 8;
@@ -668,3 +699,4 @@ Function vblen(b)vblen=LenB(b.responseBody)End Function\n\
 Function vbstr(b)vbstr=CStr(b.responseBody)+chr(0)End Function</'+'script>');
 
 })(this);
+
