@@ -1,0 +1,17 @@
+# Aardvark-mspgack.js
+
+This is a fork of uupaa's msgpack.js. The work is his, I've just made a small edit. 
+
+I created the fork because I was having problems with exchanging msgpack data between this and the Python version u-msgpack-python, and my attempts to contact the author for a newer version didn't work out. 
+
+I found a slightly newer version (1.6) on a Japanese git server, and added code to handle a 0xd9 message. This was all I needed at the time for my application, so I haven't progressed further. 
+
+I do have plans on fully updating this version to the latest MsgPack format at a later date.
+
+It's been named Aardvark-msgpack.js as I work for Aardvark Computer Solutions, Inc. and we need to create a collection of msgpack libs in C, Python, and JavaScript that are tested against each other to confirm compatibility.  We like MsgPack, but it can be difficult making the different language libraries work together, as each author seems to focus on a different MsgPack version spec. 
+
+By naming it this way, hopefully it will be easier for others to find the compatible libs.
+
+This works great with vsergeev's u-mspgack-python 1.6, but doesn't yet support all of the message codes that his version does.
+
+Thanks to the original author.
