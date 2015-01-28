@@ -15,3 +15,7 @@ By naming it this way, hopefully it will be easier for others to find the compat
 This works great with vsergeev's u-mspgack-python 1.6, but doesn't yet support all of the message codes that his version does.
 
 Thanks to the original author.
+
+NOTE:
+
+This will not properly unpack a dictionary that uses an int as a key - It can only handle string keys. If an int is passed as a key, it will break the rest of the decoding. Will be fixed in a newer revision.
